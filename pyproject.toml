@@ -1,0 +1,16 @@
+[project]
+name = "karpathy-kb"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "dashscope>=1.25.17",
+    "markdown>=3.10.2",
+    "markdownify>=1.2.2",
+    "pillow>=12.2.0",
+    "pypdf>=6.10.2",
+    "pypdf2",
+    "unstructured>=0.22.22",
+]
