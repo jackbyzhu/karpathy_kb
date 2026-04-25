@@ -1,0 +1,27 @@
+# 配置文件示例
+# 复制此文件为 config.py 并填入你的 API Key
+
+import os
+
+# 项目根目录
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# 固定路径
+RAW_DIR = os.path.join(PROJECT_ROOT, "raw")
+WIKI_DIR = os.path.join(PROJECT_ROOT, "wiki")
+OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
+STATE_FILE = os.path.join(WIKI_DIR, "index", "compiled_files.json")
+
+# 模型配置
+MODEL_NAME = "qwen-turbo"  # 推荐使用 qwen-turbo（速度快）
+API_KEY = "your-api-key-here"  # ⚠️ 替换为你的通义千问 API Key
+TEMPERATURE = 0.1  # 温度参数（0-1），越低越稳定
+
+# 编译提示词模板
+COMPILATION_PROMPT = """
+...（完整提示词内容）
+"""
+
+INCREMENTAL_COMPILATION_PROMPT = """
+...（完整提示词内容）
+"""

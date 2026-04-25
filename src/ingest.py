@@ -68,8 +68,13 @@ class DocumentProcessor:
         """加载并解析文本文件"""
         try:
             resolved_path = self._resolve_path(file_path)
-            loader = TextLoader(resolved_path)
-            documents = loader.load()
+            # 先尝试utf-8，失败则回退到gbk
+            try:
+                loader = TextLoader(resolved_path, encoding='utf-8')
+                documents = loader.load()
+            except UnicodeDecodeError:
+                loader = TextLoader(resolved_path, encoding='gbk')
+                documents = loader.load()
             return documents
         except Exception as e:
             raise Exception(f"Failed to load text: {str(e)}")

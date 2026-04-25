@@ -12,9 +12,9 @@ from src.config import (
 
 def read_raw_files(raw_dir: str = RAW_DIR):
     """
-    读取raw目录下的所有文件，利用ingest模块处理，并返回合并后的文本
+    读取 raw 目录下的所有文件，利用 ingest 模块处理，并返回合并后的文本
     Args:
-        raw_dir: raw目录的路径
+        raw_dir: raw 目录的路径
     Returns:
         str: 所有文件内容合并后的文本
     """
@@ -30,11 +30,13 @@ def read_raw_files(raw_dir: str = RAW_DIR):
             script_dir = os.path.dirname(os.path.abspath(__file__))
             raw_dir = os.path.join(script_dir, raw_dir)
 
-    print(f"Looking for files in: {raw_dir}")
-
+    # 如果 raw 目录不存在，自动创建
     if not os.path.exists(raw_dir):
-        print(f"Directory not found: {raw_dir}")
+        os.makedirs(raw_dir)
+        print(f"Created raw directory: {raw_dir}")
         return ""
+
+    print(f"Looking for files in: {raw_dir}")
 
     for root, dirs, files in os.walk(raw_dir):
         for file in files:
@@ -77,7 +79,10 @@ def save_model_output(knowledge_base: str, output_file: str = "model.txt"):
 
 def compile_knowledge(raw_text: str, model_name: str = MODEL_NAME, api_key: str = API_KEY, prompt_template: str = COMPILATION_PROMPT):
     """
-    使用LLM生成知识库
+    使用 LLM 生成知识库
+    
+    Returns:
+        tuple: (knowledge_base: str, usage: dict, metadata: dict) 知识库内容、tokens 使用信息和模型元数据
     """
     llm = LLM(model_name, api_key, temperature=TEMPERATURE)
 
@@ -87,15 +92,27 @@ def compile_knowledge(raw_text: str, model_name: str = MODEL_NAME, api_key: str 
     print(f"Prompt length: {len(prompt)} characters")
 
     try:
-        response = llm.chat_invoke(prompt)
-        knowledge_base = response.content
-
-        save_model_output(knowledge_base)
-
-        return knowledge_base
+        result = llm.chat_invoke(prompt)
+        
+        if result['success']:
+            knowledge_base = result['response']
+            usage = result['usage']
+            metadata = result['metadata']
+            
+            # 打印 tokens 使用信息
+            print(f"Tokens used: {usage['total_tokens']} (input: {usage['prompt_tokens']}, output: {usage['output_tokens']}, cached: {usage['cached_tokens']})")
+            if metadata.get('model_name'):
+                print(f"Model: {metadata['model_name']}")
+            
+            save_model_output(knowledge_base)
+            
+            return knowledge_base, usage, metadata
+        else:
+            print(f"Error: {result['response']}")
+            return "", {'prompt_tokens': 0, 'output_tokens': 0, 'total_tokens': 0, 'cached_tokens': 0}, {}
     except Exception as e:
         print(f"Error generating knowledge base: {str(e)}")
-        return ""
+        return "", {'prompt_tokens': 0, 'output_tokens': 0, 'total_tokens': 0, 'cached_tokens': 0}, {}
 
 
 def parse_wiki_output(knowledge_base: str):
@@ -154,9 +171,9 @@ def is_person_document(markdown_content: str):
 
 def save_to_wiki(documents, output_dir: str = WIKI_DIR):
     """
-    将解析后的Markdown文档保存到相应文件夹中
-    人物文档保存到wiki/people文件夹
-    其他文档保存到wiki/concepts文件夹
+    将解析后的 Markdown 文档保存到相应文件夹中
+    人物文档保存到 wiki/people 文件夹
+    其他文档保存到 wiki/concepts 文件夹
     """
     saved_files = []
 
@@ -164,16 +181,19 @@ def save_to_wiki(documents, output_dir: str = WIKI_DIR):
         script_dir = os.path.dirname(os.path.abspath(__file__))
         output_dir = os.path.join(script_dir, output_dir)
 
-    # 确保wiki目录存在
+    # 确保 wiki 目录及其子目录存在
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+        print(f"Created wiki directory: {output_dir}")
 
     concepts_dir = os.path.join(output_dir, "concepts")
     people_dir = os.path.join(output_dir, "people")
+    index_dir = os.path.join(output_dir, "index")
 
-    for dir_path in [concepts_dir, people_dir]:
+    for dir_path in [concepts_dir, people_dir, index_dir]:
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
+            print(f"Created subdirectory: {dir_path}")
 
     for i, doc in enumerate(documents):
         title = extract_title(doc)
@@ -442,15 +462,33 @@ def compile(
     编译函数，整合了增量编译和全量编译
 
     Args:
-        raw_files: 要编译的raw文件名列表（用于指定编译特定文件）
-        file_paths: 要编译的raw文件路径列表（用于指定编译特定文件）
-        incremental: 是否使用增量编译模式，默认为True
-        raw_dir: raw目录路径
-        output_dir: wiki输出目录路径
+        raw_files: 要编译的 raw 文件名列表（用于指定编译特定文件）
+        file_paths: 要编译的 raw 文件路径列表（用于指定编译特定文件）
+        incremental: 是否使用增量编译模式，默认为 True
+        raw_dir: raw 目录路径
+        output_dir: wiki 输出目录路径
 
     Returns:
         bool: 是否编译成功
     """
+    # 确保 raw 目录存在
+    if not os.path.isabs(raw_dir):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        raw_dir = os.path.join(script_dir, raw_dir)
+    
+    if not os.path.exists(raw_dir):
+        os.makedirs(raw_dir)
+        print(f"Created raw directory: {raw_dir}")
+    
+    # 确保 wiki 输出目录存在
+    if not os.path.isabs(output_dir):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        output_dir = os.path.join(script_dir, output_dir)
+    
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"Created wiki directory: {output_dir}")
+    
     if incremental:
         # 获取未编译的文件
         if file_paths:
@@ -510,12 +548,12 @@ def compile(
             print("没有内容可处理。")
             return False
 
-        # 构建完整的提示词，包含新文件和已存在的wiki内容作为参考
+        # 构建完整的提示词，包含新文件和已存在的 wiki 内容作为参考
         existing_concepts = get_existing_concepts(output_dir)
         prompt_template = INCREMENTAL_COMPILATION_PROMPT.format(existing_concepts=existing_concepts)
         full_prompt = f"{prompt_template}\n\n## 新文件内容：\n{raw_content}\n\n## 已存在的知识库内容（作为参考）：\n{existing_wiki_content}\n\n## 重要说明：\n1. 只处理新文件和需要更新的文件\n2. 对于已存在的文件，只有在内容确实需要更新时才输出\n3. 不要为了修改而修改，要根据实际内容变化来决定\n4. 对于不需要更新的文件，不要输出\n5. 对于新文件，输出完整的内容" 
 
-        knowledge_base = compile_knowledge(raw_content, prompt_template=full_prompt)
+        knowledge_base, usage, metadata = compile_knowledge(raw_content, prompt_template=full_prompt)
 
         if knowledge_base:
             print("\nKnowledge base generated successfully!")
@@ -576,7 +614,7 @@ def compile(
             print("No content to process.")
             return False
 
-        knowledge_base = compile_knowledge(raw_text)
+        knowledge_base, usage, metadata = compile_knowledge(raw_text)
 
         if knowledge_base:
             print("\nKnowledge base generated successfully!")

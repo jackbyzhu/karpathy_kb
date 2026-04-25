@@ -151,17 +151,18 @@ def query(
 
     Args:
         question: 用户问题
-        session_id: 会话ID，用于存储和加载对话历史
+        session_id: 会话 ID，用于存储和加载对话历史
         load_history: 是否加载历史对话到当前会话
         save_history: 是否保存本次对话到历史记录
         stream: 是否流式输出
-        model_name: 模型名称，默认使用config中的配置
-        api_key: API密钥，默认使用config中的配置
-        output_dir: wiki目录路径
+        model_name: 模型名称，默认使用 config 中的配置
+        api_key: API 密钥，默认使用 config 中的配置
+        output_dir: wiki 目录路径
 
     Returns:
-        str: AI回答内容（stream=False时）
-        generator: AI回答内容的生成器（stream=True时）
+        str: AI 回答内容（stream=False 时）
+        generator: AI 回答内容的生成器（stream=True 时）
+        dict: 包含 usage(tokens 使用信息)
     """
     from src.config import MODEL_NAME, API_KEY
 
@@ -172,11 +173,26 @@ def query(
         script_dir = os.path.dirname(os.path.abspath(__file__))
         output_dir = os.path.join(script_dir, output_dir)
 
+    # 确保 wiki 目录及其子目录存在
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        concepts_dir = os.path.join(output_dir, "concepts")
+        people_dir = os.path.join(output_dir, "people")
+        index_dir = os.path.join(output_dir, "index")
+        sessions_dir = os.path.join(output_dir, "..", "output", "sessions")
+        for dir_path in [concepts_dir, people_dir, index_dir]:
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path)
+        if not os.path.exists(sessions_dir):
+            os.makedirs(sessions_dir)
+        print(f"Created wiki directory structure: {output_dir}")
+        return "错误：知识库为空，请先编译知识库。", {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
+
     print("Loading knowledge base...")
     wiki_content = load_all_wiki_content(output_dir)
 
     if not wiki_content:
-        return "错误：知识库为空，请先编译知识库。"
+        return "错误：知识库为空，请先编译知识库。", {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
 
     print(f"Knowledge base loaded: {len(wiki_content)} characters")
 
@@ -194,26 +210,66 @@ def query(
     messages.append({"role": "user", "content": question})
 
     if stream:
-        def generate():
-            response = ""
-            for chunk in llm.chat_stream(messages, system_prompt=system_prompt):
-                response += chunk.content
-                print(chunk.content, end="", flush=True)
-            print()
-            if save_history:
-                save_conversation(session_id, "user", question)
-                save_conversation(session_id, "assistant", response)
-            return response
-        return generate()
-    else:
-        response = llm.chat_invoke(messages, system_prompt=system_prompt)
-        answer = response.content
-
+        response = ""
+        chunk_count = 0
+        
+        # 使用流式调用
+        try:
+            for chunk_result in llm.chat_stream(question, system_prompt=system_prompt):
+                chunk_count += 1
+                if chunk_result['success'] and chunk_result.get('content'):
+                    content = chunk_result['content']
+                    response += content
+                    print(content, end='', flush=True)
+        except Exception as e:
+            print(f"\n流式输出过程中出错：{str(e)}")
+            # 如果流式失败，回退到普通调用
+            print("回退到普通调用模式...")
+            result = llm.chat_invoke(question, system_prompt=system_prompt)
+            if result['success']:
+                response = result['response']
+                print(response, end='')
+            else:
+                return f"错误：{result['response']}", llm.get_usage()
+        
+        print()  # 换行
+        
+        # 从 LLM 实例获取 tokens 使用信息
+        final_usage = llm.get_usage()
+        final_metadata = llm.get_metadata()
+        
         if save_history:
             save_conversation(session_id, "user", question)
-            save_conversation(session_id, "assistant", answer)
-
-        return answer
+            save_conversation(session_id, "assistant", response)
+        
+        # 打印 tokens 使用信息
+        if final_usage.get('total_tokens', 0) > 0:
+            print(f"Tokens used: {final_usage['total_tokens']} (input: {final_usage['prompt_tokens']}, output: {final_usage['output_tokens']}, cached: {final_usage['cached_tokens']})")
+            if final_metadata.get('model_name'):
+                print(f"Model: {final_metadata['model_name']}")
+        
+        return response, final_usage
+    else:
+        result = llm.chat_invoke(question, system_prompt=system_prompt)
+        usage = result.get('usage', {'prompt_tokens': 0, 'output_tokens': 0, 'total_tokens': 0, 'cached_tokens': 0})
+        metadata = result.get('metadata', {})
+        
+        if result['success']:
+            answer = result['response']
+            
+            # 打印 tokens 使用信息
+            print(f"Tokens used: {usage['total_tokens']} (input: {usage['prompt_tokens']}, output: {usage['output_tokens']}, cached: {usage['cached_tokens']})")
+            if metadata.get('model_name'):
+                print(f"Model: {metadata['model_name']}")
+            
+            if save_history:
+                save_conversation(session_id, "user", question)
+                save_conversation(session_id, "assistant", answer)
+            
+            return answer, usage
+        else:
+            print(f"Error: {result['response']}")
+            return result['response'], usage
 
 
 if __name__ == "__main__":
